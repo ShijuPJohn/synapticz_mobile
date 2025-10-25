@@ -53,7 +53,7 @@ class TestSessionModel {
 
   factory TestSessionModel.fromJson(Map<String, dynamic> json) {
     // Helper function to safely parse int from dynamic
-    int _parseIntWithDefault(dynamic value, int defaultValue) {
+    int parseIntWithDefault(dynamic value, int defaultValue) {
       if (value == null) return defaultValue;
       if (value is int) return value;
       if (value is String) return int.tryParse(value) ?? defaultValue;
@@ -61,7 +61,7 @@ class TestSessionModel {
     }
 
     // Helper function to safely parse double from dynamic
-    double _parseDoubleWithDefault(dynamic value, double defaultValue) {
+    double parseDoubleWithDefault(dynamic value, double defaultValue) {
       if (value == null) return defaultValue;
       if (value is double) return value;
       if (value is int) return value.toDouble();
@@ -86,13 +86,13 @@ class TestSessionModel {
       finishedTime: testSession['finished_time'] != null
         ? DateTime.parse(testSession['finished_time'] as String)
         : null,
-      totalMarks: _parseDoubleWithDefault(testSession['total_marks'], 0.0),
-      scoredMarks: _parseDoubleWithDefault(testSession['scored_marks'], 0.0),
-      currentQuestionNum: _parseIntWithDefault(testSession['current_question_num'], 0),
-      rank: _parseIntWithDefault(testSession['rank'], 0),
-      secondsPerQuestion: _parseIntWithDefault(testSession['seconds_per_question'], 0),
-      timeCapSeconds: _parseIntWithDefault(testSession['time_cap_seconds'], 0),
-      remainingTime: _parseIntWithDefault(testSession['remaining_time'], 0),
+      totalMarks: parseDoubleWithDefault(testSession['total_marks'], 0.0),
+      scoredMarks: parseDoubleWithDefault(testSession['scored_marks'], 0.0),
+      currentQuestionNum: parseIntWithDefault(testSession['current_question_num'], 0),
+      rank: parseIntWithDefault(testSession['rank'], 0),
+      secondsPerQuestion: parseIntWithDefault(testSession['seconds_per_question'], 0),
+      timeCapSeconds: parseIntWithDefault(testSession['time_cap_seconds'], 0),
+      remainingTime: parseIntWithDefault(testSession['remaining_time'], 0),
       questionSetId: questionSet['id'] as String? ?? '',
       questionSetName: questionSet['name'] as String? ?? '',
       questionSetDescription: questionSet['description'] as String?,
@@ -100,10 +100,10 @@ class TestSessionModel {
       questionSetSubject: questionSet['subject'] as String?,
       questions: questions,
       bookmarkedQuestionIds: (json['bookmarked_question_ids'] as List<dynamic>?)
-        ?.map((e) => _parseIntWithDefault(e, 0))
+        ?.map((e) => parseIntWithDefault(e, 0))
         .toList() ?? [],
       savedExplanationQuestionIds: (json['saved_explanation_question_ids'] as List<dynamic>?)
-        ?.map((e) => _parseIntWithDefault(e, 0))
+        ?.map((e) => parseIntWithDefault(e, 0))
         .toList() ?? [],
       testStats: json['test_stats'] as Map<String, dynamic>?,
     );

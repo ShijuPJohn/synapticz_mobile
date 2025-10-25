@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/test_session_model.dart';
+import '../models/test_history_model.dart';
 import '../constants/api_constants.dart';
 import 'storage_service.dart';
 
@@ -62,7 +63,8 @@ class TestSessionService {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return TestSessionModel.fromJson(data['test_session']);
+      // The entire response contains test_session, questions, question_set, etc.
+      return TestSessionModel.fromJson(data);
     } else {
       final error = jsonDecode(response.body);
       throw Exception(error['error'] ?? 'Failed to resume test session');
@@ -82,22 +84,24 @@ class TestSessionService {
       throw Exception('Not authenticated');
     }
 
+    final requestBody = {
+      'question_answer_data': {
+        questionId.toString(): {
+          'selected_answer_list': selectedOptions,
+          'answered': true, // Explicitly set to true when saving answer
+        }
+      },
+      'current_question_index': currentQuestionIndex,
+      if (remainingTime != null) 'remaining_time': remainingTime,
+    };
+
     final response = await http.put(
       Uri.parse('$baseUrl/test_session/$sessionId'),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({
-        'question_answer_data': {
-          questionId.toString(): {
-            'selected_answer_list': selectedOptions,
-            'answered': selectedOptions.isNotEmpty,
-          }
-        },
-        'current_question_index': currentQuestionIndex,
-        if (remainingTime != null) 'remaining_time': remainingTime,
-      }),
+      body: jsonEncode(requestBody),
     );
 
     if (response.statusCode != 200) {
@@ -131,7 +135,7 @@ class TestSessionService {
   }
 
   /// Get user's test history
-  static Future<List<Map<String, dynamic>>> getTestHistory({
+  static Future<Map<String, dynamic>> getTestHistory({
     int page = 1,
     int limit = 20,
     String? subject,
@@ -164,7 +168,16 @@ class TestSessionService {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return List<Map<String, dynamic>>.from(data['sessions'] ?? []);
+      return {
+        'history': (data['history'] as List<dynamic>?)
+                ?.map((item) => TestHistoryModel.fromJson(item as Map<String, dynamic>))
+                .toList() ??
+            [],
+        'page': data['page'] ?? page,
+        'limit': data['limit'] ?? limit,
+        'count': data['count'] ?? 0,
+        'hasMore': data['hasMore'] ?? false,
+      };
     } else {
       final error = jsonDecode(response.body);
       throw Exception(error['error'] ?? 'Failed to get test history');

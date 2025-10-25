@@ -55,7 +55,7 @@ class QuizModel {
 
   factory QuizModel.fromJson(Map<String, dynamic> json) {
     // Helper function to safely parse int from dynamic (can be String or int)
-    int? _parseInt(dynamic value) {
+    int? parseInt(dynamic value) {
       if (value == null) return null;
       if (value is int) return value;
       if (value is String) return int.tryParse(value);
@@ -63,8 +63,8 @@ class QuizModel {
     }
 
     // Helper function to safely parse int with default
-    int _parseIntWithDefault(dynamic value, int defaultValue) {
-      final parsed = _parseInt(value);
+    int parseIntWithDefault(dynamic value, int defaultValue) {
+      final parsed = parseInt(value);
       return parsed ?? defaultValue;
     }
 
@@ -75,12 +75,12 @@ class QuizModel {
       subject: json['subject'] as String,
       exam: json['exam'] as String?,
       language: json['language'] as String,
-      timeDuration: _parseInt(json['time_duration']),
+      timeDuration: parseInt(json['time_duration']),
       description: json['description'] as String?,
       associatedResource: json['associated_resource'] as String?,
       coverImage: json['cover_image'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
-      createdById: _parseIntWithDefault(json['created_by_id'], 0),
+      createdById: parseIntWithDefault(json['created_by_id'], 0),
       createdByName: json['created_by_name'] as String? ?? '',
       createdByEmail: json['created_by_email'] as String? ?? '',
       accessLevel: json['access_level'] as String? ?? 'free',
@@ -88,10 +88,10 @@ class QuizModel {
       verified: json['verified'] as bool? ?? false,
       visibility: json['visibility'] as String? ?? 'public',
       urlSlug: json['url_slug'] as String? ?? '',
-      questionIds: (json['question_ids'] as List<dynamic>?)?.map((e) => _parseIntWithDefault(e, 0)).toList() ?? [],
-      totalQuestions: _parseIntWithDefault(json['total_questions'], 0),
+      questionIds: (json['question_ids'] as List<dynamic>?)?.map((e) => parseIntWithDefault(e, 0)).toList() ?? [],
+      totalQuestions: parseIntWithDefault(json['total_questions'], 0),
       tags: (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
-      testSessionsTaken: _parseIntWithDefault(json['test_sessions_taken'], 0),
+      testSessionsTaken: parseIntWithDefault(json['test_sessions_taken'], 0),
       learningArticleId: json['learning_article_id'] as String?,
       marks: (json['marks'] as List<dynamic>?)?.map((e) => e as num).toList(),
     );

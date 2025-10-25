@@ -4,6 +4,7 @@ import 'package:confetti/confetti.dart';
 import '../../../core/models/question_model.dart';
 import '../../../core/services/test_session_service.dart';
 import '../../widgets/markdown_with_latex.dart';
+import '../../widgets/percentile_bar_chart.dart';
 
 class TestResultsScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -56,20 +57,45 @@ class _TestResultsScreenState extends ConsumerState<TestResultsScreen> {
     try {
       // Load the test session to get results
       final session = await TestSessionService.resumeTestSession(widget.sessionId);
-      // For now, just show a basic view - results will be passed from submit
+
+      // Calculate results from session data
+      final answeredQuestions = session.questions.where((q) => q.answered).toList();
+      final correctCount = answeredQuestions.where((q) => q.isCorrect).length;
+      final incorrectCount = answeredQuestions.where((q) => !q.isCorrect).length;
+      final unansweredCount = session.questions.where((q) => !q.answered).length;
+      final score = session.scoredMarks;
+      final totalMarks = session.totalMarks;
+      final percentage = totalMarks > 0 ? (score / totalMarks) * 100 : 0.0;
+
       setState(() {
         _results = {
-          'score': 0,
-          'total_marks': 0,
-          'percentage': 0,
-          'correct_count': 0,
-          'incorrect_count': 0,
-          'unanswered_count': 0,
+          'test_session': {
+            'scored_marks': score,
+            'total_marks': totalMarks,
+            'rank': session.rank,
+          },
+          'score': score,
+          'total_marks': totalMarks,
+          'percentage': percentage,
+          'correct_count': correctCount,
+          'incorrect_count': incorrectCount,
+          'unanswered_count': unansweredCount,
           'total_questions': session.totalQuestions,
-          'question_results': [],
+          'questions': session.questions.map((q) => q.toJson()).toList(),
+          'question_results': session.questions.map((q) => {
+            'question': q.toJson(), // Send full question object, not just the text
+            'is_correct': q.isCorrect,
+            'answered': q.answered,
+            'selected_options': q.selectedAnswerList,
+            'correct_options': q.correctOptions,
+            'explanation': q.explanation,
+            'options': q.options,
+          }).toList(),
+          if (session.testStats != null) 'test_stats': session.testStats,
         };
         _isLoading = false;
       });
+      _checkAndShowConfetti();
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -168,15 +194,47 @@ class _TestResultsScreenState extends ConsumerState<TestResultsScreen> {
   }
 
   Widget _buildResultsContent() {
-    final score = (_results!['score'] as num?)?.toDouble() ?? 0.0;
-    final totalMarks = (_results!['total_marks'] as num?)?.toDouble() ?? 0.0;
-    final percentage = (_results!['percentage'] as num?)?.toDouble() ?? 0.0;
-    final correctCount = (_results!['correct_count'] as int?) ?? 0;
-    final incorrectCount = (_results!['incorrect_count'] as int?) ?? 0;
-    final unansweredCount = (_results!['unanswered_count'] as int?) ?? 0;
-    final totalQuestions = (_results!['total_questions'] as int?) ?? 0;
+    // Get test_stats from backend response
+    final testStats = _results!['test_stats'] as Map<String, dynamic>?;
+
+    // Use backend data if available, otherwise fallback to calculated values
+    final score = (_results!['test_session']?['scored_marks'] as num?)?.toDouble() ??
+                  (_results!['score'] as num?)?.toDouble() ?? 0.0;
+    final totalMarks = (_results!['test_session']?['total_marks'] as num?)?.toDouble() ??
+                       (_results!['total_marks'] as num?)?.toDouble() ?? 0.0;
+    final percentage = (testStats?['percentage'] as num?)?.toDouble() ??
+                       (_results!['percentage'] as num?)?.toDouble() ?? 0.0;
+    final correctCount = (testStats?['correct_answers'] as int?) ??
+                         (_results!['correct_count'] as int?) ?? 0;
+    final incorrectCount = (testStats?['wrong_answers'] as int?) ??
+                           (_results!['incorrect_count'] as int?) ?? 0;
+    final unansweredCount = (testStats?['unanswered'] as int?) ??
+                            (_results!['unanswered_count'] as int?) ?? 0;
+    final totalQuestions = (_results!['total_questions'] as int?) ??
+                           ((_results!['questions'] as List?)?.length ?? 0);
     final timeTaken = _results!['time_taken'] as String?;
-    final questionResults = _results!['question_results'] as List<dynamic>? ?? [];
+    final questionResults = _results!['question_results'] as List<dynamic>? ??
+                           (_results!['questions'] as List<dynamic>? ?? []);
+
+    // Additional stats from backend
+    final totalAttempts = (testStats?['total_attempts'] as int?) ?? 1;
+    final avgScore = (testStats?['average_score'] as num?)?.toDouble() ?? 0.0;
+    final topScore = (testStats?['top_score'] as num?)?.toDouble() ?? 0.0;
+    final userRank = (_results!['test_session']?['rank'] as int?) ?? 0;
+
+    // Handle all_test_takers_scores which might be List<String> or List<num>
+    final allScoresRaw = testStats?['all_test_takers_scores'];
+    final allScores = <double>[];
+    if (allScoresRaw is List) {
+      for (var score in allScoresRaw) {
+        if (score is num) {
+          allScores.add(score.toDouble());
+        } else if (score is String) {
+          final parsed = double.tryParse(score);
+          if (parsed != null) allScores.add(parsed);
+        }
+      }
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -266,6 +324,49 @@ class _TestResultsScreenState extends ConsumerState<TestResultsScreen> {
           ),
           const SizedBox(height: 24),
 
+          // Percentile Bar Chart
+          if (allScores.isNotEmpty)
+            PercentileBarChart(
+              allScores: allScores,
+              userScore: score,
+              totalMarks: totalMarks,
+            ),
+          if (allScores.isNotEmpty) const SizedBox(height: 24),
+
+          // Performance Breakdown Section
+          if (testStats != null) ...[
+            Text(
+              'Performance Analysis',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey[300]!,
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  if (userRank > 0)
+                    _buildInfoRow(Icons.emoji_events, 'Your Rank', '#$userRank'),
+                  _buildInfoRow(Icons.people, 'Total Attempts', totalAttempts.toString()),
+                  _buildInfoRow(Icons.trending_up, 'Average Score', '${avgScore.toStringAsFixed(1)}/${totalMarks.toStringAsFixed(1)}'),
+                  _buildInfoRow(Icons.star, 'Top Score', '${topScore.toStringAsFixed(1)}/${totalMarks.toStringAsFixed(1)}'),
+                  if (allScores.isNotEmpty)
+                    _buildInfoRow(Icons.analytics, 'Percentile', '${_calculatePercentile(score, allScores).toStringAsFixed(1)}%'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
           // Additional Info
           _buildInfoRow(Icons.quiz, 'Total Questions', totalQuestions.toString()),
           if (timeTaken != null) _buildInfoRow(Icons.timer, 'Time Taken', timeTaken),
@@ -300,6 +401,13 @@ class _TestResultsScreenState extends ConsumerState<TestResultsScreen> {
         ],
       ),
     );
+  }
+
+  double _calculatePercentile(double score, List<double> allScores) {
+    if (allScores.isEmpty) return 0.0;
+
+    final lowerCount = allScores.where((s) => s < score).length;
+    return (lowerCount / allScores.length) * 100;
   }
 
   Widget _buildStatCard(String label, String value, Color color, IconData icon) {
@@ -362,19 +470,25 @@ class _TestResultsScreenState extends ConsumerState<TestResultsScreen> {
 
   Widget _buildQuestionResultCard(int questionNumber, Map<String, dynamic> result) {
     final isCorrect = result['is_correct'] as bool? ?? false;
-    final question = result['question'] as Map<String, dynamic>?;
+
+    // Handle both formats: when question is a map (from local data) or when it's part of result (from backend)
+    final questionData = result['question'] is Map<String, dynamic>
+        ? result['question'] as Map<String, dynamic>
+        : result; // Backend returns question fields at the same level
+
     final selectedOptions = (result['selected_options'] as List<dynamic>?)
             ?.map((e) => e as int)
             .toList() ??
+        (result['selected_answer_list'] as List<dynamic>?)
+            ?.map((e) => e as int)
+            .toList() ??
         [];
-    final correctOptions = (question?['correct_options'] as List<dynamic>?)
+    final correctOptions = (questionData['correct_options'] as List<dynamic>?)
             ?.map((e) => e as int)
             .toList() ??
         [];
 
-    if (question == null) return const SizedBox.shrink();
-
-    final questionModel = QuestionModel.fromJson(question);
+    final questionModel = QuestionModel.fromJson(questionData);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),

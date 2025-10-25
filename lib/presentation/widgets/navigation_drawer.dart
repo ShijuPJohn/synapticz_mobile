@@ -141,6 +141,14 @@ class AppNavigationDrawer extends ConsumerWidget {
             },
           ),
           _DrawerTile(
+            icon: Icons.history,
+            title: 'Quiz History',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/test-history');
+            },
+          ),
+          _DrawerTile(
             icon: Icons.bar_chart_outlined,
             title: 'Reports & Analytics',
             onTap: () {

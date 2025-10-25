@@ -1,10 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/models/test_history_model.dart';
+import '../../../core/services/test_session_service.dart';
 import '../../widgets/action_card.dart';
 import '../../widgets/main_scaffold.dart';
+import 'package:intl/intl.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  List<TestHistoryModel> _recentTests = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentTests();
+  }
+
+  Future<void> _loadRecentTests() async {
+    try {
+      final result = await TestSessionService.getTestHistory(
+        page: 1,
+        limit: 5, // Get 5 most recent tests
+      );
+
+      if (mounted) {
+        setState(() {
+          _recentTests = List<TestHistoryModel>.from(result['history']);
+        });
+      }
+    } catch (e) {
+      // Silently fail - just don't show recent tests section
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,39 +170,39 @@ class HomeScreen extends StatelessWidget {
 
             const SizedBox(height: 32),
 
-            // Featured Section
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Featured Quizzes',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          // TODO: Navigate to quizzes tab
-                        },
-                        child: const Text('See All'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Placeholder for featured quizzes
-                  _FeaturedQuizPlaceholder(),
-                  const SizedBox(height: 12),
-                  _FeaturedQuizPlaceholder(),
-                ],
+            // Recent Tests Section
+            if (_recentTests.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Recent Tests',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/test-history');
+                          },
+                          child: const Text('See All'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ..._recentTests.take(3).map((test) => _RecentTestCard(test: test)),
+                  ],
+                ),
               ),
-            ),
+              const SizedBox(height: 24),
+            ],
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -176,31 +210,125 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class _FeaturedQuizPlaceholder extends StatelessWidget {
+class _RecentTestCard extends StatelessWidget {
+  final TestHistoryModel test;
+
+  const _RecentTestCard({required this.test});
+
   @override
   Widget build(BuildContext context) {
+    final statusColor = test.finished
+        ? Colors.green
+        : test.started
+            ? Colors.orange
+            : Colors.grey;
+
     return Card(
-      child: ListTile(
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(Icons.quiz, color: AppColors.primary),
-        ),
-        title: const Text(
-          'Sample Quiz',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: const Text('10 Questions • 15 min'),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
         onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Quiz detail - Coming Soon')),
-          );
+          if (test.finished) {
+            Navigator.pushNamed(
+              context,
+              '/test-results',
+              arguments: {
+                'sessionId': test.id,
+              },
+            );
+          } else {
+            Navigator.pushNamed(
+              context,
+              '/test-session',
+              arguments: {
+                'sessionId': test.id,
+              },
+            );
+          }
         },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Icon
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  test.finished ? Icons.check_circle : Icons.play_circle_outline,
+                  color: statusColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      test.qSetName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (test.finished) ...[
+                          Icon(Icons.assessment, size: 12, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${test.scoredMarks.toStringAsFixed(0)}/${test.totalMarks.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '(${test.percentage.toStringAsFixed(0)}%)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ] else ...[
+                          Icon(Icons.play_arrow, size: 12, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            test.started ? 'Resume' : 'Start',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        Text(
+                          DateFormat('MMM dd').format(test.startedTime),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Arrow
+              Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey[400]),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -18,8 +18,8 @@ class MainScaffold extends ConsumerWidget {
 
   static const List<Widget> _screens = [
     HomeScreen(),
-    QuizzesScreen(),
     LearnScreen(),
+    QuizzesScreen(),
     ProfileScreen(),
   ];
 
@@ -30,14 +30,14 @@ class MainScaffold extends ConsumerWidget {
       label: 'Home',
     ),
     NavigationDestination(
+      icon: Icon(Icons.menu_book_outlined),
+      selectedIcon: Icon(Icons.menu_book),
+      label: 'QuizBooks',
+    ),
+    NavigationDestination(
       icon: Icon(Icons.quiz_outlined),
       selectedIcon: Icon(Icons.quiz),
       label: 'Quizzes',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.school_outlined),
-      selectedIcon: Icon(Icons.school),
-      label: 'Learn',
     ),
     NavigationDestination(
       icon: Icon(Icons.person_outline),

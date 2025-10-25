@@ -27,7 +27,7 @@ class QuizBookModel {
 
   factory QuizBookModel.fromJson(Map<String, dynamic> json) {
     // Helper function to safely parse int from dynamic (can be String or int)
-    int _parseIntWithDefault(dynamic value, int defaultValue) {
+    int parseIntWithDefault(dynamic value, int defaultValue) {
       if (value == null) return defaultValue;
       if (value is int) return value;
       if (value is String) return int.tryParse(value) ?? defaultValue;
@@ -41,7 +41,7 @@ class QuizBookModel {
       description: json['description'] as String?,
       coverImage: json['cover_image'] as String?,
       visibility: json['visibility'] as String? ?? 'public',
-      createdById: _parseIntWithDefault(json['created_by_id'], 0),
+      createdById: parseIntWithDefault(json['created_by_id'], 0),
       deleted: json['deleted'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -98,7 +98,7 @@ class QuizBookQuizModel {
 
   factory QuizBookQuizModel.fromJson(Map<String, dynamic> json) {
     // Helper function to safely parse int from dynamic
-    int? _parseInt(dynamic value) {
+    int? parseInt(dynamic value) {
       if (value == null) return null;
       if (value is int) return value;
       if (value is String) return int.tryParse(value);
@@ -114,7 +114,7 @@ class QuizBookQuizModel {
       visibility: json['visibility'] as String?,
       description: json['description'] as String?,
       coverImage: json['cover_image'] as String?,
-      difficulty: _parseInt(json['difficulty']),
+      difficulty: parseInt(json['difficulty']),
     );
   }
 

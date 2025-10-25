@@ -27,7 +27,7 @@ class QuestionModel {
 
   factory QuestionModel.fromJson(Map<String, dynamic> json) {
     // Helper function to safely parse int from dynamic
-    int _parseIntWithDefault(dynamic value, int defaultValue) {
+    int parseIntWithDefault(dynamic value, int defaultValue) {
       if (value == null) return defaultValue;
       if (value is int) return value;
       if (value is String) return int.tryParse(value) ?? defaultValue;
@@ -35,7 +35,7 @@ class QuestionModel {
     }
 
     // Helper function to safely parse double from dynamic
-    double _parseDoubleWithDefault(dynamic value, double defaultValue) {
+    double parseDoubleWithDefault(dynamic value, double defaultValue) {
       if (value == null) return defaultValue;
       if (value is double) return value;
       if (value is int) return value.toDouble();
@@ -44,21 +44,21 @@ class QuestionModel {
     }
 
     return QuestionModel(
-      id: _parseIntWithDefault(json['id'], 0),
+      id: parseIntWithDefault(json['id'], 0),
       question: json['question'] as String? ?? '',
       questionType: json['question_type'] as String? ?? 'm-choice',
       options: (json['options'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
       correctOptions: (json['correct_options'] as List<dynamic>?)
-              ?.map((e) => _parseIntWithDefault(e, 0))
+              ?.map((e) => parseIntWithDefault(e, 0))
               .toList() ??
           [],
       explanation: json['explanation'] as String?,
       selectedAnswerList: (json['selected_answer_list'] as List<dynamic>?)
-              ?.map((e) => _parseIntWithDefault(e, 0))
+              ?.map((e) => parseIntWithDefault(e, 0))
               .toList() ??
           [],
-      questionsTotalMark: _parseDoubleWithDefault(json['questions_total_mark'], 1.0),
-      questionsScoredMark: _parseDoubleWithDefault(json['questions_scored_mark'], 0.0),
+      questionsTotalMark: parseDoubleWithDefault(json['questions_total_mark'], 1.0),
+      questionsScoredMark: parseDoubleWithDefault(json['questions_scored_mark'], 0.0),
       answered: json['answered'] as bool? ?? false,
       isCorrect: json['is_correct'] as bool? ?? false,
     );

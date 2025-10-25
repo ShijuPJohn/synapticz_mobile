@@ -83,6 +83,19 @@ class _QuizzesScreenState extends ConsumerState<QuizzesScreen> {
                 currentState.languageFilter,
                 (value) => ref.read(quizProvider.notifier).setLanguageFilter(value),
               ),
+              const SizedBox(height: 16),
+              Text(
+                'Visibility',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              _buildFilterChips(
+                ['Public', 'Private', 'Shared'],
+                currentState.visibilityFilter != null
+                    ? currentState.visibilityFilter![0].toUpperCase() + currentState.visibilityFilter!.substring(1)
+                    : null,
+                (value) => ref.read(quizProvider.notifier).setVisibilityFilter(value?.toLowerCase()),
+              ),
             ],
           ),
         ),
@@ -167,7 +180,8 @@ class _QuizzesScreenState extends ConsumerState<QuizzesScreen> {
                 const Icon(Icons.filter_list),
                 if (quizState.subjectFilter != null ||
                     quizState.examFilter != null ||
-                    quizState.languageFilter != null)
+                    quizState.languageFilter != null ||
+                    quizState.visibilityFilter != null)
                   Positioned(
                     right: 0,
                     top: 0,

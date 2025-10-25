@@ -14,6 +14,7 @@ class QuizState {
   final String? examFilter;
   final String? languageFilter;
   final bool showMyQuizzes;
+  final String? visibilityFilter; // 'public', 'private', 'shared', or null for all
 
   QuizState({
     this.quizzes = const [],
@@ -26,6 +27,7 @@ class QuizState {
     this.examFilter,
     this.languageFilter,
     this.showMyQuizzes = false,
+    this.visibilityFilter,
   });
 
   QuizState copyWith({
@@ -39,6 +41,7 @@ class QuizState {
     String? examFilter,
     String? languageFilter,
     bool? showMyQuizzes,
+    String? visibilityFilter,
   }) {
     return QuizState(
       quizzes: quizzes ?? this.quizzes,
@@ -51,6 +54,7 @@ class QuizState {
       examFilter: examFilter ?? this.examFilter,
       languageFilter: languageFilter ?? this.languageFilter,
       showMyQuizzes: showMyQuizzes ?? this.showMyQuizzes,
+      visibilityFilter: visibilityFilter ?? this.visibilityFilter,
     );
   }
 }
@@ -78,7 +82,9 @@ class QuizNotifier extends StateNotifier<QuizState> {
         exam: state.examFilter,
         language: state.languageFilter,
         myQuizzes: state.showMyQuizzes ? true : null,
-        showPublic: !state.showMyQuizzes ? true : null,
+        showPublic: state.visibilityFilter == 'public' ? true : (state.visibilityFilter == null ? true : null),
+        showPrivate: state.visibilityFilter == 'private' ? true : null,
+        showShared: state.visibilityFilter == 'shared' ? true : null,
       );
 
       final newQuizzes = append ? [...state.quizzes, ...response.data] : response.data;
@@ -133,6 +139,11 @@ class QuizNotifier extends StateNotifier<QuizState> {
 
   void toggleMyQuizzes() {
     state = state.copyWith(showMyQuizzes: !state.showMyQuizzes);
+    loadQuizzes(page: 1);
+  }
+
+  void setVisibilityFilter(String? visibility) {
+    state = state.copyWith(visibilityFilter: visibility);
     loadQuizzes(page: 1);
   }
 

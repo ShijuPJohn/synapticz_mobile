@@ -25,7 +25,6 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
   int _currentQuestionIndex = 0;
   Timer? _timer;
   int _remainingSeconds = 0;
-  bool _isSavingAnswer = false;
 
   @override
   void initState() {
@@ -54,7 +53,7 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
         _isLoading = false;
 
         // Start timer if timed mode
-        if (session.timeDuration != null && !session.completed) {
+        if (session.timeDuration != null && !session.finished) {
           _startTimer(session);
         }
       });
@@ -68,7 +67,7 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
 
   void _startTimer(TestSessionModel session) {
     final totalSeconds = session.timeDuration! * 60;
-    final elapsedSeconds = DateTime.now().difference(session.startedAt).inSeconds;
+    final elapsedSeconds = DateTime.now().difference(session.startedTime).inSeconds;
     _remainingSeconds = totalSeconds - elapsedSeconds;
 
     if (_remainingSeconds <= 0) {
@@ -88,7 +87,7 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
   }
 
   Future<void> _autoSubmitTest() async {
-    if (_testSession == null || _testSession!.completed) return;
+    if (_testSession == null || _testSession!.finished) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Time is up! Auto-submitting test...')),
@@ -97,47 +96,106 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
     await _submitTest();
   }
 
-  Future<void> _saveAnswer(int questionId, List<int> selectedOptions) async {
-    if (_testSession == null || _isSavingAnswer) return;
+  void _saveSelection(int questionId, List<int> selectedOptions) {
+    if (_testSession == null) return;
 
+    // Update UI immediately - save selection but don't mark as answered
     setState(() {
-      _isSavingAnswer = true;
+      final updatedQuestions = _testSession!.questions.map((q) {
+        if (q.id == questionId) {
+          return QuestionModel(
+            id: q.id,
+            question: q.question,
+            questionType: q.questionType,
+            options: q.options,
+            correctOptions: q.correctOptions,
+            explanation: q.explanation,
+            selectedAnswerList: selectedOptions,
+            questionsTotalMark: q.questionsTotalMark,
+            questionsScoredMark: q.questionsScoredMark,
+            answered: q.answered, // Keep current answered status
+            isCorrect: q.isCorrect, // Keep current correctness status
+          );
+        }
+        return q;
+      }).toList();
+
+      _testSession = _testSession!.copyWith(questions: updatedQuestions);
+    });
+  }
+
+  void _saveAnswer(int questionId, List<int> selectedOptions) {
+    if (_testSession == null) return;
+
+    // Update UI immediately (optimistic update)
+    setState(() {
+      final updatedQuestions = _testSession!.questions.map((q) {
+        if (q.id == questionId) {
+          // Calculate if answer is correct
+          final isCorrect = _checkAnswerCorrect(selectedOptions, q.correctOptions);
+          final scoredMark = isCorrect ? q.questionsTotalMark : 0.0;
+
+          return QuestionModel(
+            id: q.id,
+            question: q.question,
+            questionType: q.questionType,
+            options: q.options,
+            correctOptions: q.correctOptions,
+            explanation: q.explanation,
+            selectedAnswerList: selectedOptions,
+            questionsTotalMark: q.questionsTotalMark,
+            questionsScoredMark: scoredMark,
+            answered: true, // Always mark as answered when saving
+            isCorrect: isCorrect,
+          );
+        }
+        return q;
+      }).toList();
+
+      _testSession = _testSession!.copyWith(questions: updatedQuestions);
     });
 
-    try {
-      await TestSessionService.saveAnswer(
-        sessionId: _testSession!.sessionId,
-        questionId: questionId,
-        selectedOptions: selectedOptions,
-        currentQuestionIndex: _currentQuestionIndex,
-        remainingTime: _remainingSeconds > 0 ? _remainingSeconds : null,
-      );
-
-      setState(() {
-        final updatedAnswers = Map<int, List<int>>.from(_testSession!.selectedAnswers);
-        updatedAnswers[questionId] = selectedOptions;
-        _testSession = _testSession!.copyWith(selectedAnswers: updatedAnswers);
-        _isSavingAnswer = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isSavingAnswer = false;
-      });
+    // Fire and forget - send to backend without waiting
+    TestSessionService.saveAnswer(
+      sessionId: _testSession!.sessionId,
+      questionId: questionId,
+      selectedOptions: selectedOptions,
+      currentQuestionIndex: _currentQuestionIndex,
+      remainingTime: _remainingSeconds > 0 ? _remainingSeconds : null,
+    ).catchError((e) {
+      // Silently handle errors
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save answer: ${e.toString()}')),
+          const SnackBar(
+            content: Text('Failed to sync answer'),
+            duration: Duration(seconds: 1),
+          ),
         );
       }
-    }
+    });
+  }
+
+  bool _checkAnswerCorrect(List<int> selectedOptions, List<int> correctOptions) {
+    if (selectedOptions.length != correctOptions.length) return false;
+
+    final selectedSet = Set<int>.from(selectedOptions);
+    final correctSet = Set<int>.from(correctOptions);
+
+    return selectedSet.difference(correctSet).isEmpty &&
+           correctSet.difference(selectedSet).isEmpty;
   }
 
   void _toggleReviewMark(int questionId) {
     if (_testSession == null) return;
 
     setState(() {
-      final updatedReviewMarked = Map<int, bool>.from(_testSession!.reviewMarked);
-      updatedReviewMarked[questionId] = !(_testSession!.isQuestionMarkedForReview(questionId));
-      _testSession = _testSession!.copyWith(reviewMarked: updatedReviewMarked);
+      final updatedBookmarks = List<int>.from(_testSession!.bookmarkedQuestionIds);
+      if (updatedBookmarks.contains(questionId)) {
+        updatedBookmarks.remove(questionId);
+      } else {
+        updatedBookmarks.add(questionId);
+      }
+      _testSession = _testSession!.copyWith(bookmarkedQuestionIds: updatedBookmarks);
     });
   }
 
@@ -250,7 +308,7 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
         appBar: AppBar(
           title: Text(_testSession?.questionSetName ?? 'Test Session'),
           actions: [
-            if (_testSession?.timeDuration != null && !_testSession!.completed)
+            if (_testSession?.timeDuration != null && !_testSession!.finished)
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Center(
@@ -275,6 +333,12 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
             IconButton(
               icon: const Icon(Icons.grid_view),
               onPressed: _showQuestionNavigator,
+              tooltip: 'Question Navigator',
+            ),
+            IconButton(
+              icon: const Icon(Icons.flag_outlined),
+              onPressed: _submitTest,
+              tooltip: 'Finish Test',
             ),
           ],
         ),
@@ -319,7 +383,15 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
                           Expanded(
                             child: SingleChildScrollView(
                               padding: const EdgeInsets.all(16),
-                              child: _QuestionView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Statistics panel
+                                  _buildStatisticsPanel(),
+                                  const SizedBox(height: 16),
+
+                                  // Question view
+                                  _QuestionView(
                                 question: _testSession!.questions[_currentQuestionIndex],
                                 questionNumber: _currentQuestionIndex + 1,
                                 totalQuestions: _testSession!.totalQuestions,
@@ -329,6 +401,13 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
                                 isMarkedForReview: _testSession!.isQuestionMarkedForReview(
                                   _testSession!.questions[_currentQuestionIndex].id,
                                 ),
+                                testFinished: _testSession!.finished,
+                                onSelectionChanged: (selectedOptions) {
+                                  _saveSelection(
+                                    _testSession!.questions[_currentQuestionIndex].id,
+                                    selectedOptions,
+                                  );
+                                },
                                 onAnswerSelected: (selectedOptions) {
                                   _saveAnswer(
                                     _testSession!.questions[_currentQuestionIndex].id,
@@ -340,6 +419,8 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
                                     _testSession!.questions[_currentQuestionIndex].id,
                                   );
                                 },
+                              ),
+                                ],
                               ),
                             ),
                           ),
@@ -399,6 +480,116 @@ class _TestSessionScreenState extends ConsumerState<TestSessionScreen> {
     );
   }
 
+  Widget _buildStatisticsPanel() {
+    if (_testSession == null) return const SizedBox.shrink();
+
+    final answered = _testSession!.answeredCount;
+    final total = _testSession!.totalQuestions;
+    final scoredMarks = _testSession!.questions
+        .where((q) => q.answered)
+        .fold(0.0, (sum, q) => sum + q.questionsScoredMark);
+    final accuracy = answered > 0
+        ? (scoredMarks / _testSession!.questions
+                .where((q) => q.answered)
+                .fold(0.0, (sum, q) => sum + q.questionsTotalMark)) * 100
+        : 0.0;
+
+    // Calculate current streak (consecutive correct answers from current position backwards)
+    int currentStreak = 0;
+    for (int i = _currentQuestionIndex - 1; i >= 0; i--) {
+      final q = _testSession!.questions[i];
+      if (q.answered && q.isCorrect) {
+        currentStreak++;
+      } else if (q.answered) {
+        break; // Break on first incorrect answer
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildStatItem(
+            icon: Icons.check_circle_outline,
+            label: 'Answered',
+            value: '$answered/$total',
+            color: Colors.blue,
+          ),
+          Container(
+            width: 1,
+            height: 40,
+            color: Colors.grey[300],
+          ),
+          _buildStatItem(
+            icon: Icons.bar_chart,
+            label: 'Accuracy',
+            value: '${accuracy.toStringAsFixed(0)}%',
+            color: accuracy >= 70
+                ? Colors.green
+                : accuracy >= 50
+                    ? Colors.orange
+                    : Colors.red,
+          ),
+          Container(
+            width: 1,
+            height: 40,
+            color: Colors.grey[300],
+          ),
+          _buildStatItem(
+            icon: Icons.local_fire_department,
+            label: 'Streak',
+            value: '$currentStreak',
+            color: currentStreak >= 5
+                ? Colors.orange
+                : currentStreak >= 3
+                    ? Colors.deepOrange
+                    : Colors.grey,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
   String _formatTime(int seconds) {
     final hours = seconds ~/ 3600;
     final minutes = (seconds % 3600) ~/ 60;
@@ -418,8 +609,10 @@ class _QuestionView extends StatefulWidget {
   final int totalQuestions;
   final List<int> selectedOptions;
   final bool isMarkedForReview;
+  final Function(List<int>) onSelectionChanged;
   final Function(List<int>) onAnswerSelected;
   final VoidCallback onToggleReviewMark;
+  final bool testFinished;
 
   const _QuestionView({
     required this.question,
@@ -427,8 +620,10 @@ class _QuestionView extends StatefulWidget {
     required this.totalQuestions,
     required this.selectedOptions,
     required this.isMarkedForReview,
+    required this.onSelectionChanged,
     required this.onAnswerSelected,
     required this.onToggleReviewMark,
+    required this.testFinished,
   });
 
   @override
@@ -453,6 +648,9 @@ class _QuestionViewState extends State<_QuestionView> {
   }
 
   void _handleOptionSelection(int optionIndex) {
+    // Only allow selection if not answered yet
+    if (widget.question.answered && !widget.testFinished) return;
+
     setState(() {
       if (widget.question.isMultiSelect) {
         if (_localSelectedOptions.contains(optionIndex)) {
@@ -464,8 +662,19 @@ class _QuestionViewState extends State<_QuestionView> {
         _localSelectedOptions = [optionIndex];
       }
     });
+
+    // Save the selection immediately (but don't mark as answered)
+    widget.onSelectionChanged(_localSelectedOptions);
+  }
+
+  void _submitAnswer() {
+    if (_localSelectedOptions.isEmpty) return;
+
+    // Call the callback to save answer (fire and forget)
     widget.onAnswerSelected(_localSelectedOptions);
   }
+
+  bool get _showFeedback => widget.question.answered || widget.testFinished;
 
   @override
   Widget build(BuildContext context) {
@@ -548,38 +757,46 @@ class _QuestionViewState extends State<_QuestionView> {
         ),
         const SizedBox(height: 24),
 
-        // Question image
-        if (widget.question.imageUrl != null && widget.question.imageUrl!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                widget.question.imageUrl!,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.image_not_supported, color: Colors.grey),
-                        SizedBox(width: 8),
-                        Text('Image failed to load'),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
+        // Question image - removed as not in backend response
 
         // Options
         ...List.generate(widget.question.options.length, (index) {
           final isSelected = _localSelectedOptions.contains(index);
+          final isCorrectOption = widget.question.correctOptions.contains(index);
+
+          // Determine colors based on feedback state
+          Color borderColor;
+          Color backgroundColor;
+          Color indicatorColor;
+
+          if (_showFeedback) {
+            // After answering, show correct/incorrect feedback
+            if (isCorrectOption) {
+              borderColor = Colors.green;
+              backgroundColor = Colors.green.withValues(alpha: 0.1);
+              indicatorColor = Colors.green;
+            } else if (isSelected && !isCorrectOption) {
+              borderColor = Colors.red;
+              backgroundColor = Colors.red.withValues(alpha: 0.1);
+              indicatorColor = Colors.red;
+            } else {
+              borderColor = Colors.grey[300]!;
+              backgroundColor = Colors.transparent;
+              indicatorColor = Colors.grey[400]!;
+            }
+          } else {
+            // Before answering, use default selection colors
+            borderColor = isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Colors.grey[300]!;
+            backgroundColor = isSelected
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
+                : Colors.transparent;
+            indicatorColor = isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Colors.grey[400]!;
+          }
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: InkWell(
@@ -588,13 +805,9 @@ class _QuestionViewState extends State<_QuestionView> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-                      : Colors.transparent,
+                  color: backgroundColor,
                   border: Border.all(
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey[300]!,
+                    color: borderColor,
                     width: 2,
                   ),
                   borderRadius: BorderRadius.circular(12),
@@ -610,20 +823,24 @@ class _QuestionViewState extends State<_QuestionView> {
                             ? BoxShape.rectangle
                             : BoxShape.circle,
                         border: Border.all(
-                          color: isSelected
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.grey[400]!,
+                          color: indicatorColor,
                           width: 2,
                         ),
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
+                        color: (isSelected || (_showFeedback && isCorrectOption))
+                            ? indicatorColor
                             : Colors.transparent,
                         borderRadius: widget.question.isMultiSelect
                             ? BorderRadius.circular(4)
                             : null,
                       ),
-                      child: isSelected
-                          ? const Icon(Icons.check, size: 16, color: Colors.white)
+                      child: (isSelected || (_showFeedback && isCorrectOption))
+                          ? Icon(
+                              _showFeedback && isCorrectOption
+                                  ? Icons.check
+                                  : Icons.check,
+                              size: 16,
+                              color: Colors.white,
+                            )
                           : null,
                     ),
                     const SizedBox(width: 12),
@@ -635,28 +852,89 @@ class _QuestionViewState extends State<_QuestionView> {
                         textStyle: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
+
+                    // Show feedback icon
+                    if (_showFeedback && isCorrectOption)
+                      const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    if (_showFeedback && isSelected && !isCorrectOption)
+                      const Icon(Icons.cancel, color: Colors.red, size: 20),
                   ],
                 ),
               ),
             ),
           );
         }),
+        const SizedBox(height: 16),
 
-        // Hint
-        if (widget.question.hint != null && widget.question.hint!.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          ExpansionTile(
-            leading: const Icon(Icons.lightbulb_outline, color: Colors.amber),
-            title: const Text('Hint'),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: MarkdownWithLatex(
-                  data: widget.question.hint!,
-                  textStyle: Theme.of(context).textTheme.bodyMedium,
+        // Answer button - only show if not yet answered
+        if (!_showFeedback)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _localSelectedOptions.isEmpty ? null : _submitAnswer,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text(
+                'Answer',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ],
+            ),
+          ),
+
+
+        // Explanation section - show after answering
+        if (_showFeedback && widget.question.explanation != null) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.blue.withValues(alpha: 0.3),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.lightbulb_outline,
+                          color: Colors.blue[700],
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Explanation',
+                          style: TextStyle(
+                            color: Colors.blue[700],
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Save explanation button could go here
+                  ],
+                ),
+                const SizedBox(height: 12),
+                MarkdownWithLatex(
+                  data: widget.question.explanation!,
+                  textStyle: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
           ),
         ],
       ],

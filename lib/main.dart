@@ -11,6 +11,7 @@ import 'presentation/screens/quizzes/quiz_detail_screen.dart';
 import 'presentation/screens/learn/quizbook_detail_screen.dart';
 import 'presentation/screens/test/test_session_screen.dart';
 import 'presentation/screens/test/test_results_screen.dart';
+import 'presentation/screens/test/test_history_screen.dart';
 import 'presentation/widgets/main_scaffold.dart';
 import 'presentation/widgets/auth_checker.dart';
 
@@ -88,6 +89,7 @@ class SynapticzApp extends ConsumerWidget {
         '/onboarding': (context) => const OnboardingScreen(),
         '/home': (context) => const MainScaffold(),
         '/edit-profile': (context) => const EditProfileScreen(),
+        '/test-history': (context) => const TestHistoryScreen(),
       },
     );
   }

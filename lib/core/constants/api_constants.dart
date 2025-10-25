@@ -5,7 +5,7 @@ class ApiConstants {
   // Development (Physical Device on same network): http://<YOUR_LOCAL_IP>:8080/api (e.g., http://192.168.1.100:8080/api)
   // Production / Cloud Backend: https://synapticz-backend-go-801753403122.asia-southeast1.run.app/api
 
-  static const String baseUrl = 'https://synapticz-backend-go-801753403122.asia-southeast1.run.app/api'; // Cloud backend for physical device
+  static const String baseUrl = 'https://synapticz-backend-go-801753403122.asia-southeast1.run.app/api'; // Cloud backend
 
   // Auth Endpoints
   static const String checkEmail = '/auth/check-email';
